@@ -163,6 +163,11 @@ class CarController(CarControllerBase):
   def create_canfd_msgs(self, apply_steer_req, apply_torque, set_speed_in_units, accel, stopping, hud_control, CS, CC):
     can_sends = []
 
+    # LX3: passive mode — don't send ANY CAN messages unless openpilot is actively engaged
+    # This prevents SCC/HBA faults on the car's dashboard
+    if self.CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026 and not (CC.enabled or CC.latActive):
+      return can_sends
+
     lka_steering = self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING
     lka_steering_long = lka_steering and self.CP.openpilotLongitudinalControl
 
