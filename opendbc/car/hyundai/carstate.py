@@ -328,8 +328,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
       self.buttons_counter = cp.vl[self.cruise_btns_msg_canfd]["COUNTER"]
     ret.accFaulted = cp.vl["TCS"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
 
-    # LX3: CAM_0x362 may not exist on CAM bus — skip to avoid invalidating the parser
-    if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG and self.CP.carFingerprint != CAR.HYUNDAI_PALISADE_HEV_2026:
+    if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG:
       self.lfa_block_msg = copy.copy(cp_cam.vl["CAM_0x362"] if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT
                                           else cp_cam.vl["CAM_0x2a4"])
 
@@ -367,7 +366,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
         ("CRUISE_BUTTONS_LX3", float('nan')),  # real buttons on 0x10B, counter steps by 2
         ("HOD_FD_01_100ms", float('nan')),  # hands-on detection, presence unconfirmed on LX3
       ]
-      # CAM_0x362 may not exist on LX3 CAM bus
+      # CAM_0x362 exists on LX3 (camera, 20Hz) — nan freq avoids rate-check mismatch
       cam_msgs += [("CAM_0x362", float('nan'))]
     elif not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
