@@ -395,6 +395,14 @@ class CAR(Platforms):
     CarSpecs(mass=1999, wheelbase=2.9, steerRatio=15.6 * 1.15, tireStiffnessFactor=0.63),
     flags=HyundaiFlags.MANDO_RADAR | HyundaiFlags.CHECKSUM_CRC8,
   )
+  HYUNDAI_PALISADE_HEV_2026 = HyundaiCanFDPlatformConfig(
+    [
+      HyundaiCarDocs("Hyundai Palisade Hybrid 2026", "All", car_parts=CarParts.common([CarHarness.hyundai_h])),
+    ],
+    CarSpecs(mass=2200, wheelbase=2.97, steerRatio=14.3, tireStiffnessFactor=0.63),
+    # HYBRID set explicitly: LX3 has no 0xFA on E-CAN, so interface auto-detect misses it
+    flags=HyundaiFlags.CANFD_ANGLE_STEERING | HyundaiFlags.HYBRID,
+  )
   HYUNDAI_VELOSTER = HyundaiPlatformConfig(
     [HyundaiCarDocs("Hyundai Veloster 2019-20", min_enable_speed=5. * CV.MPH_TO_MS, car_parts=CarParts.common([CarHarness.hyundai_e]))],
     CarSpecs(mass=2917 * CV.LB_TO_KG, wheelbase=2.8, steerRatio=13.75 * 1.15, tireStiffnessFactor=0.5),
