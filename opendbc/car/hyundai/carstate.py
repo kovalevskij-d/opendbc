@@ -312,9 +312,16 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     prev_cruise_buttons = self.cruise_buttons[-1]
     prev_main_buttons = self.main_buttons[-1]
     prev_lda_button = self.lda_button
-    if self.CP.carFingerprint != CAR.HYUNDAI_PALISADE_HEV_2026:
-      # LX3: standard button messages carry no button data on ECAN (real buttons are on 0x2F0 ACAN);
-      # engagement is handled by the stock PCM instead
+    if self.CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026:
+      # LX3: the CRUISE_BUTTONS field on 0x1AA is a free-running counter; real buttons are on
+      # 0x10B — ADAS_BTNS (1=res+, 2=set-) matches the standard Buttons encoding.
+      # Layout from the community port (Matt-Wash-Burn/opendbc#3); engagement still relies on
+      # the stock PCM until these are road-validated.
+      self.cruise_buttons.extend(cp.vl_all["CRUISE_BUTTONS_LX3"]["ADAS_BTNS"])
+      self.main_buttons.extend(cp.vl_all["CRUISE_BUTTONS_LX3"]["ACC_BTN"])
+      self.lda_button = cp.vl["CRUISE_BUTTONS_LX3"]["LFA_BTN"]
+      self.buttons_counter = 0
+    else:
       self.cruise_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"])
       self.main_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["ADAPTIVE_CRUISE_MAIN_BTN"])
       self.lda_button = cp.vl[self.cruise_btns_msg_canfd]["LDA_BTN"]
@@ -357,6 +364,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
         ("BLINKERS_LX3_LEFT", float('nan')),
         ("BLINKERS_LX3_RIGHT", float('nan')),
         ("CRUISE_BUTTONS_ALT", float('nan')),  # exists on ECAN but carries no button data on LX3
+        ("CRUISE_BUTTONS_LX3", float('nan')),  # real buttons on 0x10B, counter steps by 2
         ("HOD_FD_01_100ms", float('nan')),  # hands-on detection, presence unconfirmed on LX3
       ]
       # CAM_0x362 may not exist on LX3 CAM bus
