@@ -401,8 +401,8 @@ class CAR(Platforms):
     ],
     # specs from the community port with road-verified lateral (Matt-Wash-Burn/opendbc#3)
     CarSpecs(mass=2165, wheelbase=2.97, steerRatio=17.25, tireStiffnessFactor=0.63),
-    # HYBRID set explicitly: LX3 has no 0xFA on E-CAN, so interface auto-detect misses it
-    flags=HyundaiFlags.CANFD_ANGLE_STEERING | HyundaiFlags.HYBRID,
+    # HYBRID auto-detected via 0xFA on E-CAN (verified present on the live car)
+    flags=HyundaiFlags.CANFD_ANGLE_STEERING,
   )
   HYUNDAI_VELOSTER = HyundaiPlatformConfig(
     [HyundaiCarDocs("Hyundai Veloster 2019-20", min_enable_speed=5. * CV.MPH_TO_MS, car_parts=CarParts.common([CarHarness.hyundai_e]))],

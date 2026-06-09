@@ -364,7 +364,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
         ("BLINKERS_LX3_RIGHT", float('nan')),
         ("CRUISE_BUTTONS_ALT", float('nan')),  # exists on ECAN but carries no button data on LX3
         ("CRUISE_BUTTONS_LX3", float('nan')),  # real buttons on 0x10B, counter steps by 2
-        ("HOD_FD_01_100ms", float('nan')),  # hands-on detection, presence unconfirmed on LX3
+        ("HOD_FD_01_100ms", float('nan')),  # present on LX3 but at ~5Hz (not 100Hz) — nan avoids rate check
       ]
       # CAM_0x362 exists on LX3 (camera, 20Hz) — nan freq avoids rate-check mismatch
       cam_msgs += [("CAM_0x362", float('nan'))]
@@ -380,8 +380,9 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     }
 
     if is_lx3:
-      # LX3: message counters increment by 2 instead of 1 — disable counter validation on all
-      # messages, including ones registered lazily after this point
+      # LX3 counters are mixed (verified on the live car): 0x105/0x130/0x10B/0xFA/0x208 step by 2,
+      # most others step by 1. Critical reads (gas 0x105, gear 0x130) are step-2, so disable
+      # counter validation on all messages, including ones registered lazily after this point
       for parser in parsers.values():
         original_add = parser._add_message
         def patched_add(name_or_addr, freq=None, _orig=original_add, _parser=parser):
