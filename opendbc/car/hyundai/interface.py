@@ -61,6 +61,10 @@ class CarInterface(CarInterfaceBase):
         ret.flags |= HyundaiFlags.CANFD_LKA_STEER_MSG.value
         if 0x110 in fingerprint[CAN.CAM]:
           ret.flags |= HyundaiFlags.CANFD_LKA_STEER_MSG_ALT.value
+        # LKA steering cars may also lack CRUISE_BUTTONS (0x1cf), e.g. Palisade Hybrid 2026 (LX3);
+        # without this the panda RX check expects 0x1cf and faults with canError
+        if 0x1cf not in fingerprint[CAN.ECAN]:
+          ret.flags |= HyundaiFlags.CANFD_ALT_BUTTONS.value
       else:
         # no LKA steering
         if 0x1cf not in fingerprint[CAN.ECAN]:

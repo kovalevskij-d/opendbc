@@ -236,8 +236,14 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
 
     ret.brakePressed = cp.vl["TCS"]["DriverBraking"] == 1
 
-    ret.doorOpen = cp.vl["DOORS_SEATBELTS"]["DRIVER_DOOR"] == 1
-    ret.seatbeltUnlatched = cp.vl["DOORS_SEATBELTS"]["DRIVER_SEATBELT"] == 0
+    if self.CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026:
+      # LX3: standard DOORS_SEATBELTS (0x411) does not exist; door state is in PDC_FD_03_200ms (0x3E2)
+      ret.doorOpen = cp.vl["PDC_FD_03_200ms"]["Warn_DrvDrSwSta"] == 1
+      # LX3 seatbelt signal (0x401 byte11) is event-pulse only, not level — disabled until a persistent signal is found
+      ret.seatbeltUnlatched = False
+    else:
+      ret.doorOpen = cp.vl["DOORS_SEATBELTS"]["DRIVER_DOOR"] == 1
+      ret.seatbeltUnlatched = cp.vl["DOORS_SEATBELTS"]["DRIVER_SEATBELT"] == 0
 
     gear = cp.vl[self.gear_msg_canfd]["GEAR"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
@@ -266,12 +272,17 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     else:
       ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
 
-    # TODO: alt signal usage may be described by cp.vl['BLINKERS']['USE_ALT_LAMP']
-    left_blinker_sig, right_blinker_sig = "LEFT_LAMP", "RIGHT_LAMP"
-    if self.CP.carFingerprint == CAR.HYUNDAI_KONA_EV_2ND_GEN or self.is_canfd_angle_steering:
-      left_blinker_sig, right_blinker_sig = "LEFT_LAMP_ALT", "RIGHT_LAMP_ALT"
-    ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["BLINKERS"][left_blinker_sig],
-                                                                      cp.vl["BLINKERS"][right_blinker_sig])
+    if self.CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026:
+      # LX3: standard BLINKERS (0x413) does not exist; lamps are on 0x35A/0x35B
+      ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["BLINKERS_LX3_LEFT"]["LEFT_LAMP"],
+                                                                        cp.vl["BLINKERS_LX3_RIGHT"]["RIGHT_LAMP"])
+    else:
+      # TODO: alt signal usage may be described by cp.vl['BLINKERS']['USE_ALT_LAMP']
+      left_blinker_sig, right_blinker_sig = "LEFT_LAMP", "RIGHT_LAMP"
+      if self.CP.carFingerprint == CAR.HYUNDAI_KONA_EV_2ND_GEN or self.is_canfd_angle_steering:
+        left_blinker_sig, right_blinker_sig = "LEFT_LAMP_ALT", "RIGHT_LAMP_ALT"
+      ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["BLINKERS"][left_blinker_sig],
+                                                                        cp.vl["BLINKERS"][right_blinker_sig])
     if self.CP.enableBsm:
       ret.leftBlindspot = bool(cp.vl["ADAS_CMD_50_50ms"]["BCW_LtIndSta"])
       ret.rightBlindspot = bool(cp.vl["ADAS_CMD_50_50ms"]["BCW_RtIndSta"])
@@ -300,13 +311,17 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     prev_cruise_buttons = self.cruise_buttons[-1]
     prev_main_buttons = self.main_buttons[-1]
     prev_lda_button = self.lda_button
-    self.cruise_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"])
-    self.main_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["ADAPTIVE_CRUISE_MAIN_BTN"])
-    self.lda_button = cp.vl[self.cruise_btns_msg_canfd]["LDA_BTN"]
-    self.buttons_counter = cp.vl[self.cruise_btns_msg_canfd]["COUNTER"]
+    if self.CP.carFingerprint != CAR.HYUNDAI_PALISADE_HEV_2026:
+      # LX3: standard button messages carry no button data on ECAN (real buttons are on 0x2F0 ACAN);
+      # engagement is handled by the stock PCM instead
+      self.cruise_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"])
+      self.main_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["ADAPTIVE_CRUISE_MAIN_BTN"])
+      self.lda_button = cp.vl[self.cruise_btns_msg_canfd]["LDA_BTN"]
+      self.buttons_counter = cp.vl[self.cruise_btns_msg_canfd]["COUNTER"]
     ret.accFaulted = cp.vl["TCS"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
 
-    if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG:
+    # LX3: CAM_0x362 may not exist on CAM bus — skip to avoid invalidating the parser
+    if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG and self.CP.carFingerprint != CAR.HYUNDAI_PALISADE_HEV_2026:
       self.lfa_block_msg = copy.copy(cp_cam.vl["CAM_0x362"] if self.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT
                                           else cp_cam.vl["CAM_0x2a4"])
 
@@ -321,22 +336,55 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
 
     CarStateExt.update_canfd_ext(self, ret, ret_sp, can_parsers, speed_factor)
 
-    ret.blockPcmEnable = not self.recent_button_interaction()
+    if self.CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026:
+      # LX3: openpilot does not see the cruise buttons (0x2F0 ACAN) — let the stock PCM engage freely
+      ret.blockPcmEnable = False
+    else:
+      ret.blockPcmEnable = not self.recent_button_interaction()
 
     return ret, ret_sp
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
-    if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
+    cam_msgs = []
+    is_lx3 = CP.carFingerprint == CAR.HYUNDAI_PALISADE_HEV_2026
+    if is_lx3:
+      # LX3: register non-standard body messages; float('nan') = no freq/alive check for
+      # messages that may not exist or have irregular timing
+      msgs += [
+        ("PDC_FD_03_200ms", float('nan')),
+        ("BLINKERS_LX3_LEFT", float('nan')),
+        ("BLINKERS_LX3_RIGHT", float('nan')),
+        ("CRUISE_BUTTONS_ALT", float('nan')),  # exists on ECAN but carries no button data on LX3
+        ("HOD_FD_01_100ms", float('nan')),  # hands-on detection, presence unconfirmed on LX3
+      ]
+      # CAM_0x362 may not exist on LX3 CAM bus
+      cam_msgs += [("CAM_0x362", float('nan'))]
+    elif not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
       msgs += [
         # this message is 50Hz but the ECU frequently stops transmitting for ~0.5s
         ("CRUISE_BUTTONS", 1)
       ]
-    return {
+    parsers = {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CanBus(CP).ECAN),
-      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).CAM),
+      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], cam_msgs, CanBus(CP).CAM),
     }
+
+    if is_lx3:
+      # LX3: message counters increment by 2 instead of 1 — disable counter validation on all
+      # messages, including ones registered lazily after this point
+      for parser in parsers.values():
+        original_add = parser._add_message
+        def patched_add(name_or_addr, freq=None, _orig=original_add, _parser=parser):
+          _orig(name_or_addr, freq)
+          for state in _parser.message_states.values():
+            state.ignore_counter = True
+        parser._add_message = patched_add
+        for state in parser.message_states.values():
+          state.ignore_counter = True
+
+    return parsers
 
   def get_can_parsers(self, CP, CP_SP):
     if CP.flags & HyundaiFlags.CANFD:
